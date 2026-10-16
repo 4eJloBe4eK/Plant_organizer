@@ -1,4 +1,4 @@
-
+import 'screens/plant_scanner_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
@@ -22,6 +22,8 @@ class Plant {
   final DateTime wateringDate;
   final String light;
   final int wateringInterval;
+  final String humidity;
+  final String careAdvice;
 
   const Plant({
     required this.id,
@@ -32,6 +34,8 @@ class Plant {
     required this.wateringDate,
     required this.light,
     required this.wateringInterval,
+    required this.humidity,
+    required this.careAdvice
   });
 }
 
@@ -39,11 +43,13 @@ class CareEvent {
   final String plantName;
   final String type;
   final DateTime date;
+  final String? note;
 
   const CareEvent({
     required this.plantName,
     required this.type,
     required this.date,
+    this.note,
   });
 }
 
@@ -108,6 +114,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
         wateringDate: today.subtract(const Duration(days: 2)),
         light: 'Рассеянный свет',
         wateringInterval: 7,
+        humidity: '60-70%',
+        careAdvice: 'Предпочитает яркий рассеянный свет. Протирайте листья от пыли и избегайте переувлажнения почвы.',
       ),
       Plant(
         id: 2,
@@ -118,6 +126,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
         wateringDate: today.add(const Duration(days: 3)),
         light: 'Свет или полутень',
         wateringInterval: 14,
+        humidity: '30-50%',
+        careAdvice: 'Поливайте после просыхания почвы. Не допускайте застоя воды.',
       ),
       Plant(
         id: 3,
@@ -128,6 +138,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
         wateringDate: today,
         light: 'Рассеянный свет',
         wateringInterval: 5,
+        humidity: '50-70%',
+        careAdvice: 'Не допускайте полного пересыхания земляного кома',
       ),
       Plant(
         id: 4,
@@ -138,34 +150,58 @@ class _CatalogScreenState extends State<CatalogScreen> {
         wateringDate: today.add(const Duration(days: 1)),
         light: 'Яркий рассеянный свет',
         wateringInterval: 7,
-      ),
+        humidity: '40-60%',
+        careAdvice: 'Предпочитает яркий рассеянный свет. Защищайте растение от холодных сквозняков и перепадов температуры.',     ),
     ];
 
     events = [
       CareEvent(
         plantName: 'Монстера',
         type: 'Полив',
-        date: today.subtract(const Duration(days: 2)),
-      ),
-      CareEvent(
-        plantName: 'Спатифиллум',
-        type: 'Полив',
-        date: today,
-      ),
-      CareEvent(
-        plantName: 'Фикус',
-        type: 'Полив',
-        date: today.add(const Duration(days: 1)),
-      ),
-      CareEvent(
-        plantName: 'Сансевиерия',
-        type: 'Полив',
-        date: today.add(const Duration(days: 3)),
+        date: day(today.subtract(const Duration(days: 2))),
+        note: 'Почва подсохла, растение полито.',
       ),
       CareEvent(
         plantName: 'Монстера',
         type: 'Подкормка',
-        date: today.add(const Duration(days: 2)),
+        date: day(today.subtract(const Duration(days: 10))),
+        note: 'Удобрение для декоративно-лиственных растений.',
+      ),
+      CareEvent(
+        plantName: 'Монстера',
+        type: 'Пересадка',
+        date: day(today.subtract(const Duration(days: 30))),
+        note: 'Пересажена в новый горшок.',
+      ),
+      CareEvent(
+        plantName: 'Спатифиллум',
+        type: 'Полив',
+        date: day(today),
+        note: 'Плановый полив.',
+      ),
+      CareEvent(
+        plantName: 'Спатифиллум',
+        type: 'Подкормка',
+        date: day(today.subtract(const Duration(days: 7))),
+        note: 'Добавлено жидкое удобрение.',
+      ),
+      CareEvent(
+        plantName: 'Фикус',
+        type: 'Полив',
+        date: day(today.subtract(const Duration(days: 3))),
+        note: 'Полив умеренным количеством воды.',
+      ),
+      CareEvent(
+        plantName: 'Фикус',
+        type: 'Пересадка',
+        date: day(today.subtract(const Duration(days: 60))),
+        note: 'Плановая пересадка.',
+      ),
+      CareEvent(
+        plantName: 'Сансевиерия',
+        type: 'Полив',
+        date: day(today.subtract(const Duration(days: 5))),
+        note: 'Полив после просыхания почвы.',
       ),
     ];
   }
@@ -233,6 +269,27 @@ class _CatalogScreenState extends State<CatalogScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Сканировать название растения',
+            icon: const Icon(Icons.document_scanner_outlined),
+            onPressed: () async {
+              final String? plantName = await Navigator.of(context).push<String>(
+                MaterialPageRoute(
+                  builder: (_) => const PlantScannerScreen(),
+                ),
+              );
+
+              if (!mounted || plantName == null) return;
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Распознано название: $plantName'),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
@@ -549,60 +606,258 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }).toList();
   }
 
+
   void _showPlantDetails(Plant plant) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Text(
-                plant.emoji,
-                style: const TextStyle(fontSize: 64),
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Text(
+                  plant.emoji,
+                  style: const TextStyle(fontSize: 64),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              plant.name,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
+              const SizedBox(height: 12),
+              Center(
+                child: Text(
+                  plant.name,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
-            ),
-            Text(
-              plant.species,
-              style: const TextStyle(color: Colors.black54),
-            ),
-            const Divider(height: 28),
-            _detailRow(Icons.place_outlined, 'Место', plant.location),
-            _detailRow(Icons.wb_sunny_outlined, 'Освещение', plant.light),
-            _detailRow(
-              Icons.water_drop_outlined,
-              'Следующий полив',
-              DateFormat('d MMMM yyyy', 'ru_RU')
-                  .format(plant.wateringDate),
-            ),
-            _detailRow(
-              Icons.repeat,
-              'Интервал полива',
-              'Примерно раз в ${plant.wateringInterval} дн.',
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Данные демонстрационные. Реальный режим ухода '
-                  'зависит от вида растения и условий содержания.',
-              style: TextStyle(color: Colors.black54, fontSize: 12),
-            ),
-          ],
+              Center(
+                child: Text(
+                  plant.species,
+                  style: const TextStyle(
+                    color: Colors.black54,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Основная информация
+              const Text(
+                'Информация о растении',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _detailRow(
+                Icons.place_outlined,
+                'Место',
+                plant.location,
+              ),
+              _detailRow(
+                Icons.wb_sunny_outlined,
+                'Освещение',
+                plant.light,
+              ),
+              _detailRow(
+                Icons.water_drop_outlined,
+                'Влажность воздуха',
+                plant.humidity,
+              ),
+              _detailRow(
+                Icons.calendar_month_outlined,
+                'Следующий полив',
+                DateFormat('d MMMM yyyy', 'ru_RU')
+                    .format(plant.wateringDate),
+              ),
+              _detailRow(
+                Icons.repeat,
+                'Интервал полива',
+                'Примерно раз в ${plant.wateringInterval} дн.',
+              ),
+
+              const SizedBox(height: 20),
+
+              // Ботаническая справка
+              const Text(
+                'Ботаническая справка',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5EDDF),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(
+                          Icons.eco_outlined,
+                          color: Color(0xFF477653),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Рекомендации по уходу',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      plant.careAdvice,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              const Text(
+                'Журнал ухода',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              ..._buildCareHistory(plant),
+
+              const SizedBox(height: 16),
+              const Text(
+                'Справочные данные демонстрационные. '
+                    'Режим ухода зависит от условий содержания растения.',
+                style: TextStyle(
+                  color: Colors.black54,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+
+  List<Widget> _buildCareHistory(Plant plant) {
+    final plantEvents = events
+        .where((event) => event.plantName == plant.name)
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    if (plantEvents.isEmpty) {
+      return [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F5F0),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Text(
+            'Записей пока нет. История ухода появится здесь.',
+            style: TextStyle(color: Colors.black54),
+          ),
+        ),
+      ];
+    }
+
+    return plantEvents.map((event) {
+      final IconData eventIcon;
+
+      switch (event.type) {
+        case 'Полив':
+          eventIcon = Icons.water_drop_outlined;
+          break;
+        case 'Подкормка':
+          eventIcon = Icons.eco_outlined;
+          break;
+        case 'Пересадка':
+          eventIcon = Icons.yard_outlined;
+          break;
+        default:
+          eventIcon = Icons.event_note_outlined;
+      }
+
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F5F0),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE0EBDD),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                eventIcon,
+                color: const Color(0xFF477653),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    event.type,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    DateFormat(
+                      'd MMMM yyyy',
+                      'ru_RU',
+                    ).format(event.date),
+                    style: const TextStyle(
+                      color: Colors.black54,
+                      fontSize: 13,
+                    ),
+                  ),
+                  if (event.note != null &&
+                      event.note!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      event.note!,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
 
   Widget _detailRow(IconData icon, String title, String value) {
     return Padding(
