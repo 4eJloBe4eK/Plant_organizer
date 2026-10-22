@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'data/plant_repository.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -89,8 +90,14 @@ class CatalogScreen extends StatefulWidget {
 
 class _CatalogScreenState extends State<CatalogScreen> {
   late final DateTime today;
-  late final List<Plant> plants;
-  late final List<CareEvent> events;
+
+  final PlantRepository _plantRepository = PlantRepository();
+
+  List<Plant> plants = [];
+  List<CareEvent> events = [];
+
+  bool isLoading = true;
+  String? loadError;
 
   DateTime focusedDay = day(DateTime.now());
   DateTime selectedDay = day(DateTime.now());
@@ -98,112 +105,68 @@ class _CatalogScreenState extends State<CatalogScreen> {
   String searchQuery = '';
   String filter = 'Все';
 
+
   @override
   void initState() {
     super.initState();
 
     today = day(DateTime.now());
 
-    plants = [
-      Plant(
-        id: 1,
-        name: 'Монстера',
-        species: 'Monstera deliciosa',
-        emoji: '🌿',
-        location: 'Гостиная',
-        wateringDate: today.subtract(const Duration(days: 2)),
-        light: 'Рассеянный свет',
-        wateringInterval: 7,
-        humidity: '60-70%',
-        careAdvice: 'Предпочитает яркий рассеянный свет. Протирайте листья от пыли и избегайте переувлажнения почвы.',
-      ),
-      Plant(
-        id: 2,
-        name: 'Сансевиерия',
-        species: 'Dracaena trifasciata',
-        emoji: '🪴',
-        location: 'Спальня',
-        wateringDate: today.add(const Duration(days: 3)),
-        light: 'Свет или полутень',
-        wateringInterval: 14,
-        humidity: '30-50%',
-        careAdvice: 'Поливайте после просыхания почвы. Не допускайте застоя воды.',
-      ),
-      Plant(
-        id: 3,
-        name: 'Спатифиллум',
-        species: 'Spathiphyllum',
-        emoji: '🌱',
-        location: 'Кухня',
-        wateringDate: today,
-        light: 'Рассеянный свет',
-        wateringInterval: 5,
-        humidity: '50-70%',
-        careAdvice: 'Не допускайте полного пересыхания земляного кома',
-      ),
-      Plant(
-        id: 4,
-        name: 'Фикус',
-        species: 'Ficus elastica',
-        emoji: '🌳',
-        location: 'Кабинет',
-        wateringDate: today.add(const Duration(days: 1)),
-        light: 'Яркий рассеянный свет',
-        wateringInterval: 7,
-        humidity: '40-60%',
-        careAdvice: 'Предпочитает яркий рассеянный свет. Защищайте растение от холодных сквозняков и перепадов температуры.',     ),
-    ];
+    _loadData();
+  }
 
-    events = [
-      CareEvent(
-        plantName: 'Монстера',
-        type: 'Полив',
-        date: day(today.subtract(const Duration(days: 2))),
-        note: 'Почва подсохла, растение полито.',
-      ),
-      CareEvent(
-        plantName: 'Монстера',
-        type: 'Подкормка',
-        date: day(today.subtract(const Duration(days: 10))),
-        note: 'Удобрение для декоративно-лиственных растений.',
-      ),
-      CareEvent(
-        plantName: 'Монстера',
-        type: 'Пересадка',
-        date: day(today.subtract(const Duration(days: 30))),
-        note: 'Пересажена в новый горшок.',
-      ),
-      CareEvent(
-        plantName: 'Спатифиллум',
-        type: 'Полив',
-        date: day(today),
-        note: 'Плановый полив.',
-      ),
-      CareEvent(
-        plantName: 'Спатифиллум',
-        type: 'Подкормка',
-        date: day(today.subtract(const Duration(days: 7))),
-        note: 'Добавлено жидкое удобрение.',
-      ),
-      CareEvent(
-        plantName: 'Фикус',
-        type: 'Полив',
-        date: day(today.subtract(const Duration(days: 3))),
-        note: 'Полив умеренным количеством воды.',
-      ),
-      CareEvent(
-        plantName: 'Фикус',
-        type: 'Пересадка',
-        date: day(today.subtract(const Duration(days: 60))),
-        note: 'Плановая пересадка.',
-      ),
-      CareEvent(
-        plantName: 'Сансевиерия',
-        type: 'Полив',
-        date: day(today.subtract(const Duration(days: 5))),
-        note: 'Полив после просыхания почвы.',
-      ),
-    ];
+  Future<void> _loadData() async {
+    try {
+      // При первом запуске создаём стартовые записи.
+      // Если растения уже есть, существующие данные сохраняются.
+      await _plantRepository.seedDemoDataIfNeeded(today);
+
+      // Загружаем данные из SQLite.
+      final plantRows = await _plantRepository.getPlants();
+      final eventRows = await _plantRepository.getCareEvents();
+
+      final loadedPlants = plantRows.map((row) {
+        return Plant(
+          id: row['id'] as int,
+          name: row['name'] as String,
+          species: row['species'] as String,
+          emoji: row['emoji'] as String,
+          location: row['location'] as String,
+          wateringDate: DateTime.parse(
+            row['watering_date'] as String,
+          ),
+          light: row['light'] as String,
+          wateringInterval: row['watering_interval'] as int,
+          humidity: row['humidity'] as String,
+          careAdvice: row['care_advice'] as String,
+        );
+      }).toList();
+
+      final loadedEvents = eventRows.map((row) {
+        return CareEvent(
+          plantName: row['plant_name'] as String,
+          type: row['type'] as String,
+          date: DateTime.parse(row['date'] as String),
+          note: row['note'] as String?,
+        );
+      }).toList();
+
+      if (!mounted) return;
+
+      setState(() {
+        plants = loadedPlants;
+        events = loadedEvents;
+        isLoading = false;
+        loadError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+        loadError = 'Не удалось загрузить данные: $e';
+      });
+    }
   }
 
   Color statusColor(Plant plant) {
@@ -280,18 +243,34 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 ),
               );
 
-              if (!mounted || plantName == null) return;
+              if (!mounted) return;
 
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Распознано название: $plantName'),
-                ),
-              );
+              if (plantName != null && plantName.isNotEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Распознано название: $plantName'),
+                  ),
+                );
+              }
             },
           ),
         ],
       ),
-      body: ListView(
+      body: isLoading
+          ? const Center(
+        child: CircularProgressIndicator(),
+      )
+          : loadError != null
+          ? Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            loadError!,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      )
+          : ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
           Container(
