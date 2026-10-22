@@ -4,6 +4,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'data/plant_repository.dart';
+import 'screens/add_plant_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -169,6 +170,41 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
   }
 
+  Future<void> _addPlant() async {
+    final plantData = await Navigator.of(context)
+        .push<Map<String, Object?>>(
+      MaterialPageRoute(
+        builder: (_) => const AddPlantScreen(),
+      ),
+    );
+
+    if (!mounted || plantData == null) return;
+
+    try {
+      await _plantRepository.insertPlant(plantData);
+
+      if (!mounted) return;
+
+      await _loadData();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Растение успешно добавлено'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Не удалось сохранить растение: $e'),
+        ),
+      );
+    }
+  }
+
   Color statusColor(Plant plant) {
     final difference = day(plant.wateringDate).difference(today).inDays;
 
@@ -232,12 +268,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
             ),
           ],
         ),
+
         actions: [
+          IconButton(
+            tooltip: 'Добавить растение',
+            icon: const Icon(Icons.add_circle_outline),
+            onPressed: _addPlant,
+          ),
           IconButton(
             tooltip: 'Сканировать название растения',
             icon: const Icon(Icons.document_scanner_outlined),
             onPressed: () async {
-              final String? plantName = await Navigator.of(context).push<String>(
+              final String? plantName =
+              await Navigator.of(context).push<String>(
                 MaterialPageRoute(
                   builder: (_) => const PlantScannerScreen(),
                 ),

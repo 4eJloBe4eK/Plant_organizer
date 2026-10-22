@@ -156,6 +156,11 @@ class PlantRepository {
     );
   }
 
+  Future<int> insertPlant(Map<String, Object?> plant) async {
+    final db = await _databaseHelper.database;
+    return db.insert('plants', plant);
+  }
+
   /// Загружает историю ухода с названиями растений.
   Future<List<Map<String, Object?>>> getCareEvents() async {
     final db = await _databaseHelper.database;
