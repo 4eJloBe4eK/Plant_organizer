@@ -2,7 +2,12 @@
 import 'package:flutter/material.dart';
 
 class AddPlantScreen extends StatefulWidget {
-  const AddPlantScreen({super.key});
+  final Map<String, Object?>? initialData;
+
+  const AddPlantScreen({
+    super.key,
+    this.initialData,
+  });
 
   @override
   State<AddPlantScreen> createState() => _AddPlantScreenState();
@@ -11,14 +16,55 @@ class AddPlantScreen extends StatefulWidget {
 class _AddPlantScreenState extends State<AddPlantScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _nameController = TextEditingController();
-  final _speciesController = TextEditingController();
-  final _locationController = TextEditingController();
-  final _intervalController = TextEditingController(text: '7');
-  final _humidityController = TextEditingController(text: '50-60%');
-  final _adviceController = TextEditingController();
+  late final TextEditingController _nameController;
+  late final TextEditingController _speciesController;
+  late final TextEditingController _locationController;
+  late final TextEditingController _intervalController;
+  late final TextEditingController _humidityController;
+  late final TextEditingController _adviceController;
 
-  String _light = 'Рассеянный свет';
+  late String _light;
+
+  bool get _isEditing => widget.initialData != null;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final data = widget.initialData;
+
+    _nameController = TextEditingController(
+      text: data?['name'] as String? ?? '',
+    );
+    _speciesController = TextEditingController(
+      text: data?['species'] as String? ?? '',
+    );
+    _locationController = TextEditingController(
+      text: data?['location'] as String? ?? '',
+    );
+    _intervalController = TextEditingController(
+      text: (data?['watering_interval'] as int? ?? 7).toString(),
+    );
+    _humidityController = TextEditingController(
+      text: data?['humidity'] as String? ?? '50-60%',
+    );
+    _adviceController = TextEditingController(
+      text: data?['care_advice'] as String? ?? '',
+    );
+
+    const lightOptions = [
+      'Яркий свет',
+      'Яркий рассеянный свет',
+      'Рассеянный свет',
+      'Свет или полутень',
+      'Полутень',
+    ];
+
+    final savedLight = data?['light'] as String?;
+    _light = lightOptions.contains(savedLight)
+        ? savedLight!
+        : 'Рассеянный свет';
+  }
 
   @override
   void dispose() {
@@ -34,7 +80,25 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
   void _save() {
     if (!_formKey.currentState!.validate()) return;
 
+    final data = widget.initialData;
     final interval = int.parse(_intervalController.text.trim());
+
+    final previousInterval = data?['watering_interval'] as int?;
+    final previousDate = data?['watering_date'] as String?;
+
+    final String wateringDate;
+
+    if (data != null &&
+        interval == previousInterval &&
+        previousDate != null) {
+      // Не меняем дату полива при редактировании других полей.
+      wateringDate = previousDate;
+    } else {
+      // При добавлении или изменении интервала пересчитываем полив.
+      wateringDate = DateTime.now()
+          .add(Duration(days: interval))
+          .toIso8601String();
+    }
 
     Navigator.pop<Map<String, Object?>>(
       context,
@@ -43,11 +107,9 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
         'species': _speciesController.text.trim().isEmpty
             ? 'Не указан'
             : _speciesController.text.trim(),
-        'emoji': '🌱',
+        'emoji': data?['emoji'] as String? ?? '🌱',
         'location': _locationController.text.trim(),
-        'watering_date': DateTime.now()
-            .add(Duration(days: interval))
-            .toIso8601String(),
+        'watering_date': wateringDate,
         'light': _light,
         'watering_interval': interval,
         'humidity': _humidityController.text.trim(),
@@ -62,7 +124,9 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Новое растение'),
+        title: Text(
+          _isEditing ? 'Редактирование растения' : 'Новое растение',
+        ),
       ),
       body: Form(
         key: _formKey,
@@ -109,7 +173,7 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _light,
+              initialValue: _light,
               decoration: const InputDecoration(
                 labelText: 'Освещение',
                 border: OutlineInputBorder(),
@@ -168,7 +232,9 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
               ),
               validator: (value) {
                 final interval = int.tryParse(value?.trim() ?? '');
-                if (interval == null || interval < 1 || interval > 365) {
+                if (interval == null ||
+                    interval < 1 ||
+                    interval > 365) {
                   return 'Введите число от 1 до 365';
                 }
                 return null;
@@ -188,7 +254,9 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
             FilledButton.icon(
               onPressed: _save,
               icon: const Icon(Icons.save_outlined),
-              label: const Text('Сохранить растение'),
+              label: Text(
+                _isEditing ? 'Сохранить изменения' : 'Сохранить растение',
+              ),
             ),
           ],
         ),

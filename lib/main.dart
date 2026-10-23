@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'data/plant_repository.dart';
 import 'screens/add_plant_screen.dart';
+import 'screens/add_care_event_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -200,6 +201,136 @@ class _CatalogScreenState extends State<CatalogScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Не удалось сохранить растение: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _editPlant(Plant plant) async {
+    final plantData = await Navigator.of(context)
+        .push<Map<String, Object?>>(
+      MaterialPageRoute(
+        builder: (_) => AddPlantScreen(
+          initialData: {
+            'name': plant.name,
+            'species': plant.species,
+            'emoji': plant.emoji,
+            'location': plant.location,
+            'watering_date': plant.wateringDate.toIso8601String(),
+            'light': plant.light,
+            'watering_interval': plant.wateringInterval,
+            'humidity': plant.humidity,
+            'care_advice': plant.careAdvice,
+          },
+        ),
+      ),
+    );
+
+    if (!mounted || plantData == null) return;
+
+    try {
+      await _plantRepository.updatePlant(plant.id, plantData);
+      await _loadData();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Изменения сохранены')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка редактирования: $e')),
+      );
+    }
+  }
+
+  Future<void> _deletePlant(Plant plant) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить растение?'),
+        content: Text(
+          'Растение «${plant.name}» будет удалено из каталога. '
+              'История ухода за ним также будет удалена.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || confirmed != true) return;
+
+    try {
+      await _plantRepository.deletePlant(plant.id);
+      await _loadData();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Растение удалено')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка удаления: $e')),
+      );
+    }
+  }
+
+  Future<void> _addCareEvent(Plant plant) async {
+    final result = await showModalBottomSheet<
+        Map<String, Object?>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => const AddCareEventScreen(),
+    );
+
+    if (result == null || !mounted) return;
+
+    try {
+      await _plantRepository.addCareEvent(
+        plantId: plant.id,
+        type: result['type'] as String,
+        date: result['date'] as DateTime,
+        note: (result['note'] as String?) ?? '',
+      );
+
+      await _loadData();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Запись ухода сохранена'),
+        ),
+      );
+
+      // Повторно открываем карточку с обновлённой историей.
+      final updatedPlant = plants.where(
+            (item) => item.id == plant.id,
+      );
+
+      if (updatedPlant.isNotEmpty) {
+        await _showPlantDetails(updatedPlant.first);
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Не удалось сохранить запись: $e'),
         ),
       );
     }
@@ -629,8 +760,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
 
-  void _showPlantDetails(Plant plant) {
-    showModalBottomSheet<void>(
+  Future<void> _showPlantDetails(Plant plant) async {
+    final action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
@@ -748,6 +879,46 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 ),
               ),
 
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop('edit');
+                      },
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text('Изменить'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop('delete');
+                      },
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Удалить'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 24),
+
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).pop('care');
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Записать уход'),
+                ),
+              ),
+
               const SizedBox(height: 24),
 
               const Text(
@@ -776,6 +947,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
         ),
       ),
     );
+    if (!mounted) return;
+
+    if (action == 'edit') {
+      await _editPlant(plant);
+    } else if (action == 'delete') {
+      await _deletePlant(plant);
+    } else if (action == 'care') {
+      await _addCareEvent(plant);
+    }
   }
 
   List<Widget> _buildCareHistory(Plant plant) {

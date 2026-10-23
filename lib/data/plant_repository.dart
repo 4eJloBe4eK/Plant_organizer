@@ -3,6 +3,45 @@ import 'database_helper.dart';
 class PlantRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
+  Future<void> addCareEvent({
+    required int plantId,
+    required String type,
+    required DateTime date,
+    String? note,
+  }) async {
+    final db = await _databaseHelper.database;
+
+    await db.insert('care_events', {
+      'plant_id': plantId,
+      'type': type,
+      'date': date.toIso8601String(),
+      'note': note,
+    });
+
+    // После полива пересчитываем дату следующего полива.
+    if (type == 'Полив') {
+      final plants = await db.query(
+        'plants',
+        columns: ['watering_interval'],
+        where: 'id = ?',
+        whereArgs: [plantId],
+        limit: 1,
+      );
+
+      if (plants.isNotEmpty) {
+        final interval = plants.first['watering_interval'] as int;
+        final nextWatering = date.add(Duration(days: interval));
+
+        await db.update(
+          'plants',
+          {'watering_date': nextWatering.toIso8601String()},
+          where: 'id = ?',
+          whereArgs: [plantId],
+        );
+      }
+    }
+  }
+
   /// Заполняет базу демонстрационными данными,
   /// только если в ней ещё нет растений.
   Future<void> seedDemoDataIfNeeded(DateTime today) async {
@@ -159,6 +198,27 @@ class PlantRepository {
   Future<int> insertPlant(Map<String, Object?> plant) async {
     final db = await _databaseHelper.database;
     return db.insert('plants', plant);
+  }
+
+  Future<int> updatePlant(int id, Map<String, Object?> plant) async {
+    final db = await _databaseHelper.database;
+
+    return db.update(
+      'plants',
+      plant,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<int> deletePlant(int id) async {
+    final db = await _databaseHelper.database;
+
+    return db.delete(
+      'plants',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   /// Загружает историю ухода с названиями растений.
