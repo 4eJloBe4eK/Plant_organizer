@@ -3,6 +3,52 @@ import 'database_helper.dart';
 class PlantRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper.instance;
 
+  Future<int> addReminder({
+    required int plantId,
+    required String type,
+    required DateTime scheduledDate,
+  }) async {
+    return _databaseHelper.insertReminder({
+      'plant_id': plantId,
+      'type': type,
+      'scheduled_date': scheduledDate.toIso8601String(),
+      'is_completed': 0,
+    });
+  }
+
+  Future<List<Map<String, Object?>>> getReminders({
+    int? plantId,
+    bool? completed,
+  }) async {
+    final reminders = await _databaseHelper.getReminders(
+      plantId: plantId,
+      completed: completed,
+    );
+
+    final plants = await getPlants();
+    final plantNames = <int, String>{
+      for (final plant in plants)
+        plant['id'] as int: plant['name'] as String,
+    };
+
+    return reminders.map((reminder) {
+      final id = reminder['plant_id'] as int;
+
+      return {
+        ...reminder,
+        'plant_name': plantNames[id] ?? 'Неизвестное растение',
+      };
+    }).toList();
+  }
+
+  Future<int> completeReminder(int id) async {
+    return _databaseHelper.completeReminder(id);
+  }
+
+  Future<int> deleteReminder(int id) async {
+    return _databaseHelper.deleteReminder(id);
+  }
+
   Future<void> addCareEvent({
     required int plantId,
     required String type,

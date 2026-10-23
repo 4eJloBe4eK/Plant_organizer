@@ -6,6 +6,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'data/plant_repository.dart';
 import 'screens/add_plant_screen.dart';
 import 'screens/add_care_event_screen.dart';
+import 'screens/reminders_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -426,6 +427,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   ),
                 );
               }
+            },
+          ),
+          IconButton(
+            tooltip: 'Напоминания об уходе',
+            icon: const Icon(Icons.notifications_none_outlined),
+            onPressed: () async {
+              await Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => const RemindersScreen(),
+                ),
+              );
+
+              if (!mounted) return;
+              await _loadData();
             },
           ),
         ],
