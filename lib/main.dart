@@ -173,11 +173,15 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
   }
 
-  Future<void> _addPlant() async {
+  Future<void> _addPlant({String? initialName}) async {
     final plantData = await Navigator.of(context)
         .push<Map<String, Object?>>(
       MaterialPageRoute(
-        builder: (_) => const AddPlantScreen(),
+        builder: (_) => AddPlantScreen(
+          initialData: initialName == null
+              ? null
+              : {'name': initialName},
+        ),
       ),
     );
 
@@ -412,8 +416,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             tooltip: 'Сканировать название растения',
             icon: const Icon(Icons.document_scanner_outlined),
             onPressed: () async {
-              final String? plantName =
-              await Navigator.of(context).push<String>(
+              final String? plantName = await Navigator.of(context).push<String>(
                 MaterialPageRoute(
                   builder: (_) => const PlantScannerScreen(),
                 ),
@@ -421,13 +424,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
               if (!mounted) return;
 
-              if (plantName != null && plantName.isNotEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Распознано название: $plantName'),
-                  ),
-                );
-              }
+              final name = plantName?.trim() ?? '';
+
+              if (name.isEmpty) return;
+
+              await _addPlant(initialName: name);
             },
           ),
           IconButton(
