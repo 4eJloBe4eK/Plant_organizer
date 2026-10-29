@@ -7,6 +7,7 @@ import 'data/plant_repository.dart';
 import 'screens/add_plant_screen.dart';
 import 'screens/add_care_event_screen.dart';
 import 'screens/reminders_screen.dart';
+import 'screens/reference_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -427,6 +428,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   ),
                 );
               }
+            },
+          ),
+          IconButton(
+            tooltip: 'Справочники растений и удобрений',
+            icon: const Icon(Icons.menu_book_outlined),
+            onPressed: () {
+              Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => const ReferenceScreen(),
+                ),
+              );
             },
           ),
           IconButton(
