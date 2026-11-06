@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+import '../services/plant_api_service.dart';
 
 class AddPlantScreen extends StatefulWidget {
   final Map<String, Object?>? initialData;
@@ -15,6 +16,7 @@ class AddPlantScreen extends StatefulWidget {
 
 class _AddPlantScreenState extends State<AddPlantScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _apiService = PlantApiService();
 
   late final TextEditingController _nameController;
   late final TextEditingController _speciesController;
@@ -24,6 +26,8 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
   late final TextEditingController _adviceController;
 
   late String _light;
+
+  bool _isLoading = false;
 
   bool get _isEditing => widget.initialData != null;
 
@@ -77,6 +81,75 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
     super.dispose();
   }
 
+  Future<void> _loadRecommendations() async {
+    final plantName = _nameController.text.trim();
+
+    if (plantName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Сначала введите название растения'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final data = await _apiService.getPlantCare(plantName);
+
+      if (!mounted) return;
+
+      _nameController.text = data['name']?.toString() ?? plantName;
+      _speciesController.text =
+          data['species']?.toString() ?? '';
+      _intervalController.text =
+          data['watering_interval']?.toString() ?? '7';
+      _adviceController.text =
+          data['care_advice']?.toString() ?? '';
+
+      // Преобразуем освещение API в значения нашего списка.
+      final apiLight = data['light']?.toString().toLowerCase() ?? '';
+
+      if (apiLight.contains('прямой') ||
+          apiLight.contains('full sun')) {
+        _light = 'Яркий свет';
+      } else if (apiLight.contains('тень') ||
+          apiLight.contains('shade')) {
+        _light = 'Полутень';
+      } else {
+        _light = 'Рассеянный свет';
+      }
+
+      setState(() {});
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Рекомендации успешно загружены!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Не удалось загрузить рекомендации: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   void _save() {
     if (!_formKey.currentState!.validate()) return;
 
@@ -91,10 +164,8 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
     if (data != null &&
         interval == previousInterval &&
         previousDate != null) {
-      // Не меняем дату полива при редактировании других полей.
       wateringDate = previousDate;
     } else {
-      // При добавлении или изменении интервала пересчитываем полив.
       wateringDate = DateTime.now()
           .add(Duration(days: interval))
           .toIso8601String();
@@ -147,7 +218,29 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
                 return null;
               },
             ),
+
+            const SizedBox(height: 12),
+
+            OutlinedButton.icon(
+              onPressed: _isLoading ? null : _loadRecommendations,
+              icon: _isLoading
+                  ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                ),
+              )
+                  : const Icon(Icons.cloud_download_outlined),
+              label: Text(
+                _isLoading
+                    ? 'Загрузка рекомендаций...'
+                    : 'Загрузить рекомендации из API',
+              ),
+            ),
+
             const SizedBox(height: 16),
+
             TextFormField(
               controller: _speciesController,
               decoration: const InputDecoration(
@@ -155,7 +248,9 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
+
             const SizedBox(height: 16),
+
             TextFormField(
               controller: _locationController,
               decoration: const InputDecoration(
@@ -171,7 +266,9 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
                 return null;
               },
             ),
+
             const SizedBox(height: 16),
+
             DropdownButtonFormField<String>(
               initialValue: _light,
               decoration: const InputDecoration(
@@ -206,7 +303,9 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
                 }
               },
             ),
+
             const SizedBox(height: 16),
+
             TextFormField(
               controller: _humidityController,
               decoration: const InputDecoration(
@@ -221,7 +320,9 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
                 return null;
               },
             ),
+
             const SizedBox(height: 16),
+
             TextFormField(
               controller: _intervalController,
               keyboardType: TextInputType.number,
@@ -231,7 +332,9 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
                 suffixText: 'дн.',
               ),
               validator: (value) {
-                final interval = int.tryParse(value?.trim() ?? '');
+                final interval =
+                int.tryParse(value?.trim() ?? '');
+
                 if (interval == null ||
                     interval < 1 ||
                     interval > 365) {
@@ -240,7 +343,9 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
                 return null;
               },
             ),
+
             const SizedBox(height: 16),
+
             TextFormField(
               controller: _adviceController,
               maxLines: 3,
@@ -250,12 +355,16 @@ class _AddPlantScreenState extends State<AddPlantScreen> {
                 alignLabelWithHint: true,
               ),
             ),
+
             const SizedBox(height: 24),
+
             FilledButton.icon(
               onPressed: _save,
               icon: const Icon(Icons.save_outlined),
               label: Text(
-                _isEditing ? 'Сохранить изменения' : 'Сохранить растение',
+                _isEditing
+                    ? 'Сохранить изменения'
+                    : 'Сохранить растение',
               ),
             ),
           ],

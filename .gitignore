@@ -19,6 +19,7 @@ android/key.properties
 .idea/
 .vscode/
 *.iml
+env.json
 
 # ОС
 .DS_Store

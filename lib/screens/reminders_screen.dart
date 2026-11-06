@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../services/notification_service.dart';
+
 import '../data/plant_repository.dart';
 
 class RemindersScreen extends StatefulWidget {
   const RemindersScreen({super.key});
 
   @override
-  State<RemindersScreen> createState() =>
-      _RemindersScreenState();
+  State<RemindersScreen> createState() => _RemindersScreenState();
 }
 
 class _RemindersScreenState extends State<RemindersScreen> {
@@ -31,48 +32,27 @@ class _RemindersScreenState extends State<RemindersScreen> {
 
       for (final plant in plants) {
         final plantId = plant['id'] as int;
-        final wateringDate =
-        DateTime.parse(plant['watering_date'] as String);
+        final wateringDate = DateTime.parse(plant['watering_date'] as String);
 
         final plantReminders = existing.where(
-              (reminder) =>
-          reminder['plant_id'] == plantId &&
-              reminder['type'] == 'Полив',
+          (reminder) =>
+              reminder['plant_id'] == plantId && reminder['type'] == 'Полив',
         );
 
         // Удаляем активные напоминания, дата которых
         // больше не соответствует дате полива растения.
-        for (final reminder in plantReminders) {
-          final scheduledDate = DateTime.parse(
-            reminder['scheduled_date'] as String,
-          );
 
-          final completed = reminder['is_completed'] == 1;
-
-          if (!completed &&
-              !DateUtils.isSameDay(
-                scheduledDate,
-                wateringDate,
-              )) {
-            await _repository.deleteReminder(
-              reminder['id'] as int,
-            );
-          }
-        }
-
-        // Не создаём повторное напоминание на ту же дату,
-        // даже если оно уже было выполнено.
+        // Проверяем, существует ли напоминание
+        // на дату следующего полива.
         final hasReminder = plantReminders.any((reminder) {
           final scheduledDate = DateTime.parse(
             reminder['scheduled_date'] as String,
           );
 
-          return DateUtils.isSameDay(
-            scheduledDate,
-            wateringDate,
-          );
+          return DateUtils.isSameDay(scheduledDate, wateringDate);
         });
 
+        // Если напоминания ещё нет, создаём его.
         if (!hasReminder) {
           await _repository.addReminder(
             plantId: plantId,
@@ -101,11 +81,11 @@ class _RemindersScreenState extends State<RemindersScreen> {
     }
   }
 
-  Future<void> _completeReminder(
-      Map<String, Object?> reminder,
-      ) async {
+  Future<void> _completeReminder(Map<String, Object?> reminder) async {
     try {
-      await _repository.completeReminder(
+      await _repository.completeReminder(reminder['id'] as int);
+
+      await NotificationService.instance.cancelNotification(
         reminder['id'] as int,
       );
 
@@ -113,39 +93,29 @@ class _RemindersScreenState extends State<RemindersScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Напоминание выполнено'),
-        ),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Напоминание выполнено')));
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Ошибка: $e')));
     }
   }
 
-  Future<void> _deleteReminder(
-      Map<String, Object?> reminder,
-      ) async {
+  Future<void> _deleteReminder(Map<String, Object?> reminder) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Удалить напоминание?'),
-        content: const Text(
-          'Это действие нельзя отменить.',
-        ),
+        content: const Text('Это действие нельзя отменить.'),
         actions: [
           TextButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, false),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Отмена'),
           ),
           FilledButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, true),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Удалить'),
           ),
         ],
@@ -155,7 +125,9 @@ class _RemindersScreenState extends State<RemindersScreen> {
     if (confirmed != true || !mounted) return;
 
     try {
-      await _repository.deleteReminder(
+      await _repository.deleteReminder(reminder['id'] as int);
+
+      await NotificationService.instance.cancelNotification(
         reminder['id'] as int,
       );
 
@@ -163,9 +135,8 @@ class _RemindersScreenState extends State<RemindersScreen> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка удаления: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Ошибка удаления: $e')));
     }
   }
 
@@ -178,21 +149,13 @@ class _RemindersScreenState extends State<RemindersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pending = _reminders
-        .where((r) => r['is_completed'] == 0)
-        .toList();
+    final pending = _reminders.where((r) => r['is_completed'] == 0).toList();
 
-    final completed = _reminders
-        .where((r) => r['is_completed'] == 1)
-        .toList();
+    final completed = _reminders.where((r) => r['is_completed'] == 1).toList();
 
     pending.sort((a, b) {
-      final dateA = DateTime.parse(
-        a['scheduled_date'] as String,
-      );
-      final dateB = DateTime.parse(
-        b['scheduled_date'] as String,
-      );
+      final dateA = DateTime.parse(a['scheduled_date'] as String);
+      final dateB = DateTime.parse(b['scheduled_date'] as String);
       return dateA.compareTo(dateB);
     });
 
@@ -213,90 +176,64 @@ class _RemindersScreenState extends State<RemindersScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(
-        child: CircularProgressIndicator(),
-      )
+          ? const Center(child: CircularProgressIndicator())
           : _error != null
           ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_error!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: _loadReminders,
+                      child: const Text('Повторить'),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: _loadReminders,
-                child: const Text('Повторить'),
-              ),
-            ],
-          ),
-        ),
-      )
+            )
           : RefreshIndicator(
-        onRefresh: _loadReminders,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildSummary(pending, now),
-            const SizedBox(height: 24),
-            const Text(
-              'Предстоящие задачи',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+              onRefresh: _loadReminders,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _buildSummary(pending, now),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Предстоящие задачи',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  if (pending.isEmpty)
+                    const Text('Активных напоминаний нет.')
+                  else
+                    ...pending.map(
+                      (reminder) => _buildReminderCard(reminder, now),
+                    ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Выполненные',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  if (completed.isEmpty)
+                    const Text('Выполненных напоминаний пока нет.')
+                  else
+                    ...completed.map(
+                      (reminder) => _buildReminderCard(reminder, now),
+                    ),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            if (pending.isEmpty)
-              const Text(
-                'Активных напоминаний нет.',
-              )
-            else
-              ...pending.map(
-                    (reminder) => _buildReminderCard(
-                  reminder,
-                  now,
-                ),
-              ),
-            const SizedBox(height: 24),
-            const Text(
-              'Выполненные',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (completed.isEmpty)
-              const Text(
-                'Выполненных напоминаний пока нет.',
-              )
-            else
-              ...completed.map(
-                    (reminder) => _buildReminderCard(
-                  reminder,
-                  now,
-                ),
-              ),
-          ],
-        ),
-      ),
     );
   }
 
-  Widget _buildSummary(
-      List<Map<String, Object?>> pending,
-      DateTime today,
-      ) {
+  Widget _buildSummary(List<Map<String, Object?>> pending, DateTime today) {
     final overdue = pending.where((reminder) {
       final date = DateUtils.dateOnly(
-        DateTime.parse(
-          reminder['scheduled_date'] as String,
-        ),
+        DateTime.parse(reminder['scheduled_date'] as String),
       );
 
       return date.isBefore(today);
@@ -337,13 +274,8 @@ class _RemindersScreenState extends State<RemindersScreen> {
     );
   }
 
-  Widget _buildReminderCard(
-      Map<String, Object?> reminder,
-      DateTime today,
-      ) {
-    final date = DateTime.parse(
-      reminder['scheduled_date'] as String,
-    );
+  Widget _buildReminderCard(Map<String, Object?> reminder, DateTime today) {
+    final date = DateTime.parse(reminder['scheduled_date'] as String);
     final completed = reminder['is_completed'] == 1;
 
     final dateOnly = DateUtils.dateOnly(date);
@@ -363,9 +295,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: overdue
-              ? const Color(0xFFE8B8B4)
-              : const Color(0xFFE7E9E2),
+          color: overdue ? const Color(0xFFE8B8B4) : const Color(0xFFE7E9E2),
         ),
       ),
       child: Padding(
@@ -385,17 +315,14 @@ class _RemindersScreenState extends State<RemindersScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    reminder['plant_name'] as String? ??
-                        'Растение',
+                    reminder['plant_name'] as String? ?? 'Растение',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    '${reminder['type']} · ${_formatDate(date)}',
-                  ),
+                  Text('${reminder['type']} · ${_formatDate(date)}'),
                   const SizedBox(height: 4),
                   Text(
                     completed
@@ -405,10 +332,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
                         : isToday
                         ? 'Сегодня'
                         : 'Предстоит',
-                    style: TextStyle(
-                      color: color,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(color: color, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -428,10 +352,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
                     value: 'complete',
                     child: Text('Выполнено'),
                   ),
-                const PopupMenuItem(
-                  value: 'delete',
-                  child: Text('Удалить'),
-                ),
+                const PopupMenuItem(value: 'delete', child: Text('Удалить')),
               ],
             ),
           ],

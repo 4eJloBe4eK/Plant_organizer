@@ -1,22 +1,28 @@
 import 'screens/plant_scanner_screen.dart';
+
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
+
 import 'data/plant_repository.dart';
 import 'screens/add_plant_screen.dart';
 import 'screens/add_care_event_screen.dart';
 import 'screens/reminders_screen.dart';
 import 'screens/reference_screen.dart';
+import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializeDateFormatting('ru_RU');
+
+  await initializeDateFormatting('ru_RU', null);
+
+  await NotificationService.instance.initialize();
+
   runApp(const PlantOrganizerApp());
 }
 
-DateTime day(DateTime date) =>
-    DateTime(date.year, date.month, date.day);
+DateTime day(DateTime date) => DateTime(date.year, date.month, date.day);
 
 class Plant {
   final int id;
@@ -40,7 +46,7 @@ class Plant {
     required this.light,
     required this.wateringInterval,
     required this.humidity,
-    required this.careAdvice
+    required this.careAdvice,
   });
 }
 
@@ -109,7 +115,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
   String searchQuery = '';
   String filter = 'Все';
 
-
   @override
   void initState() {
     super.initState();
@@ -136,9 +141,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
           species: row['species'] as String,
           emoji: row['emoji'] as String,
           location: row['location'] as String,
-          wateringDate: DateTime.parse(
-            row['watering_date'] as String,
-          ),
+          wateringDate: DateTime.parse(row['watering_date'] as String),
           light: row['light'] as String,
           wateringInterval: row['watering_interval'] as int,
           humidity: row['humidity'] as String,
@@ -174,13 +177,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Future<void> _addPlant({String? initialName}) async {
-    final plantData = await Navigator.of(context)
-        .push<Map<String, Object?>>(
+    final plantData = await Navigator.of(context).push<Map<String, Object?>>(
       MaterialPageRoute(
         builder: (_) => AddPlantScreen(
-          initialData: initialName == null
-              ? null
-              : {'name': initialName},
+          initialData: initialName == null ? null : {'name': initialName},
         ),
       ),
     );
@@ -188,7 +188,36 @@ class _CatalogScreenState extends State<CatalogScreen> {
     if (!mounted || plantData == null) return;
 
     try {
-      await _plantRepository.insertPlant(plantData);
+      // Сохраняем растение и получаем его ID.
+      final plantId = await _plantRepository.insertPlant(plantData);
+
+      final plantName = plantData['name'] as String;
+      final interval = plantData['watering_interval'] as int;
+
+      final firstWateringDate = DateTime.parse(
+        plantData['watering_date'] as String,
+      );
+
+      // Создаём пять напоминаний с интервалом полива.
+      for (int i = 0; i < 5; i++) {
+        final scheduledDate = firstWateringDate.add(
+          Duration(days: interval * i),
+        );
+
+        // Сохраняем напоминание в SQLite.
+        final reminderId = await _plantRepository.addReminder(
+          plantId: plantId,
+          type: 'Полив',
+          scheduledDate: scheduledDate,
+        );
+
+        // Планируем уведомление на телефоне.
+        await NotificationService.instance.scheduleWateringReminder(
+          id: reminderId,
+          plantName: plantName,
+          scheduledDate: scheduledDate,
+        );
+      }
 
       if (!mounted) return;
 
@@ -198,23 +227,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Растение успешно добавлено'),
+          content: Text('Растение добавлено! Создано 5 напоминаний о поливе.'),
         ),
       );
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Не удалось сохранить растение: $e'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Ошибка добавления растения: $e')));
     }
   }
 
   Future<void> _editPlant(Plant plant) async {
-    final plantData = await Navigator.of(context)
-        .push<Map<String, Object?>>(
+    final plantData = await Navigator.of(context).push<Map<String, Object?>>(
       MaterialPageRoute(
         builder: (_) => AddPlantScreen(
           initialData: {
@@ -240,15 +266,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Изменения сохранены')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Изменения сохранены')));
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка редактирования: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Ошибка редактирования: $e')));
     }
   }
 
@@ -259,7 +283,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
         title: const Text('Удалить растение?'),
         content: Text(
           'Растение «${plant.name}» будет удалено из каталога. '
-              'История ухода за ним также будет удалена.',
+          'История ухода за ним также будет удалена.',
         ),
         actions: [
           TextButton(
@@ -282,21 +306,18 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Растение удалено')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Растение удалено')));
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка удаления: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Ошибка удаления: $e')));
     }
   }
 
   Future<void> _addCareEvent(Plant plant) async {
-    final result = await showModalBottomSheet<
-        Map<String, Object?>>(
+    final result = await showModalBottomSheet<Map<String, Object?>>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -317,16 +338,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Запись ухода сохранена'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Запись ухода сохранена')));
 
       // Повторно открываем карточку с обновлённой историей.
-      final updatedPlant = plants.where(
-            (item) => item.id == plant.id,
-      );
+      final updatedPlant = plants.where((item) => item.id == plant.id);
 
       if (updatedPlant.isNotEmpty) {
         await _showPlantDetails(updatedPlant.first);
@@ -335,9 +352,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Не удалось сохранить запись: $e'),
-        ),
+        SnackBar(content: Text('Не удалось сохранить запись: $e')),
       );
     }
   }
@@ -363,15 +378,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   List<Plant> get filteredPlants {
     return plants.where((plant) {
-      final matchesSearch =
-      '${plant.name} ${plant.species} ${plant.location}'
+      final matchesSearch = '${plant.name} ${plant.species} ${plant.location}'
           .toLowerCase()
           .contains(searchQuery.toLowerCase());
 
       final matchesFilter = switch (filter) {
         'Требуют ухода' =>
-        day(plant.wateringDate).isBefore(today) ||
-            day(plant.wateringDate) == today,
+          day(plant.wateringDate).isBefore(today) ||
+              day(plant.wateringDate) == today,
         'Всё в порядке' => day(plant.wateringDate).isAfter(today),
         _ => true,
       };
@@ -416,11 +430,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
             tooltip: 'Сканировать название растения',
             icon: const Icon(Icons.document_scanner_outlined),
             onPressed: () async {
-              final String? plantName = await Navigator.of(context).push<String>(
-                MaterialPageRoute(
-                  builder: (_) => const PlantScannerScreen(),
-                ),
-              );
+              final String? plantName = await Navigator.of(context)
+                  .push<String>(
+                    MaterialPageRoute(
+                      builder: (_) => const PlantScannerScreen(),
+                    ),
+                  );
 
               if (!mounted) return;
 
@@ -436,9 +451,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             icon: const Icon(Icons.menu_book_outlined),
             onPressed: () {
               Navigator.of(context).push<void>(
-                MaterialPageRoute(
-                  builder: (_) => const ReferenceScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const ReferenceScreen()),
               );
             },
           ),
@@ -447,9 +460,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             icon: const Icon(Icons.notifications_none_outlined),
             onPressed: () async {
               await Navigator.of(context).push<void>(
-                MaterialPageRoute(
-                  builder: (_) => const RemindersScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const RemindersScreen()),
               );
 
               if (!mounted) return;
@@ -459,180 +470,173 @@ class _CatalogScreenState extends State<CatalogScreen> {
         ],
       ),
       body: isLoading
-          ? const Center(
-        child: CircularProgressIndicator(),
-      )
+          ? const Center(child: CircularProgressIndicator())
           : loadError != null
           ? Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            loadError!,
-            textAlign: TextAlign.center,
-          ),
-        ),
-      )
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(loadError!, textAlign: TextAlign.center),
+              ),
+            )
           : ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE5EDDF),
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: Row(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5EDDF),
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: Row(
                     children: [
-                      Text(
-                        'Ваш домашний сад',
-                        style: TextStyle(
-                          fontSize: 19,
-                          fontWeight: FontWeight.bold,
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Ваш домашний сад',
+                              style: TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            SizedBox(height: 6),
+                            Text('Следите за состоянием своих растений'),
+                          ],
                         ),
                       ),
-                      SizedBox(height: 6),
-                      Text('Следите за состоянием своих растений'),
+                      const Text('🪴', style: TextStyle(fontSize: 42)),
                     ],
                   ),
                 ),
-                const Text('🪴', style: TextStyle(fontSize: 42)),
+                const SizedBox(height: 22),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _statCard(
+                        'Растений',
+                        '${plants.length}',
+                        Icons.eco_outlined,
+                        const Color(0xFF477653),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _statCard(
+                        'Просрочено',
+                        '$overdueCount',
+                        Icons.water_drop_outlined,
+                        const Color(0xFFC84C43),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 26),
+                const Text(
+                  'Календарь ухода',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  color: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: TableCalendar<CareEvent>(
+                      locale: 'ru_RU',
+                      firstDay: DateTime.utc(2020, 1, 1),
+                      lastDay: DateTime.utc(2035, 12, 31),
+                      focusedDay: focusedDay,
+                      selectedDayPredicate: (date) =>
+                          isSameDay(selectedDay, date),
+                      eventLoader: eventsForDay,
+                      calendarFormat: CalendarFormat.month,
+                      startingDayOfWeek: StartingDayOfWeek.monday,
+                      headerStyle: const HeaderStyle(
+                        formatButtonVisible: false,
+                        titleCentered: true,
+                      ),
+                      calendarStyle: const CalendarStyle(
+                        todayDecoration: BoxDecoration(
+                          color: Color(0xFFB8CFB1),
+                          shape: BoxShape.circle,
+                        ),
+                        selectedDecoration: BoxDecoration(
+                          color: Color(0xFF477653),
+                          shape: BoxShape.circle,
+                        ),
+                        markerDecoration: BoxDecoration(
+                          color: Color(0xFFE4A13A),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      onDaySelected: (selected, focused) {
+                        setState(() {
+                          selectedDay = day(selected);
+                          focusedDay = focused;
+                        });
+                      },
+                      onPageChanged: (focused) {
+                        focusedDay = focused;
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Процедуры на ${DateFormat('d MMMM', 'ru_RU').format(selectedDay)}',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ..._buildEventsForSelectedDay(),
+                const SizedBox(height: 24),
+                const Text(
+                  'Мои растения',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Поиск растения...',
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onChanged: (value) => setState(() => searchQuery = value),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    _filterChip('Все'),
+                    _filterChip('Требуют ухода'),
+                    _filterChip('Всё в порядке'),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (filteredPlants.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: Text('Растения не найдены')),
+                  )
+                else
+                  ...filteredPlants.map(_plantCard),
               ],
             ),
-          ),
-          const SizedBox(height: 22),
-          Row(
-            children: [
-              Expanded(
-                child: _statCard(
-                  'Растений',
-                  '${plants.length}',
-                  Icons.eco_outlined,
-                  const Color(0xFF477653),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _statCard(
-                  'Просрочено',
-                  '$overdueCount',
-                  Icons.water_drop_outlined,
-                  const Color(0xFFC84C43),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 26),
-          const Text(
-            'Календарь ухода',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Card(
-            color: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: TableCalendar<CareEvent>(
-                locale: 'ru_RU',
-                firstDay: DateTime.utc(2020, 1, 1),
-                lastDay: DateTime.utc(2035, 12, 31),
-                focusedDay: focusedDay,
-                selectedDayPredicate: (date) =>
-                    isSameDay(selectedDay, date),
-                eventLoader: eventsForDay,
-                calendarFormat: CalendarFormat.month,
-                startingDayOfWeek: StartingDayOfWeek.monday,
-                headerStyle: const HeaderStyle(
-                  formatButtonVisible: false,
-                  titleCentered: true,
-                ),
-                calendarStyle: const CalendarStyle(
-                  todayDecoration: BoxDecoration(
-                    color: Color(0xFFB8CFB1),
-                    shape: BoxShape.circle,
-                  ),
-                  selectedDecoration: BoxDecoration(
-                    color: Color(0xFF477653),
-                    shape: BoxShape.circle,
-                  ),
-                  markerDecoration: BoxDecoration(
-                    color: Color(0xFFE4A13A),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                onDaySelected: (selected, focused) {
-                  setState(() {
-                    selectedDay = day(selected);
-                    focusedDay = focused;
-                  });
-                },
-                onPageChanged: (focused) {
-                  focusedDay = focused;
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            'Процедуры на ${DateFormat('d MMMM', 'ru_RU').format(selectedDay)}',
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          ..._buildEventsForSelectedDay(),
-          const SizedBox(height: 24),
-          const Text(
-            'Мои растения',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            decoration: InputDecoration(
-              hintText: 'Поиск растения...',
-              prefixIcon: const Icon(Icons.search),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-            ),
-            onChanged: (value) => setState(() => searchQuery = value),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            children: [
-              _filterChip('Все'),
-              _filterChip('Требуют ухода'),
-              _filterChip('Всё в порядке'),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (filteredPlants.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(child: Text('Растения не найдены')),
-            )
-          else
-            ...filteredPlants.map(_plantCard),
-        ],
-      ),
     );
   }
 
-  Widget _statCard(
-      String title,
-      String value,
-      IconData icon,
-      Color color,
-      ) {
+  Widget _statCard(String title, String value, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -691,10 +695,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 alignment: Alignment.center,
-                child: Text(
-                  plant.emoji,
-                  style: const TextStyle(fontSize: 39),
-                ),
+                child: Text(plant.emoji, style: const TextStyle(fontSize: 39)),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -787,7 +788,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }).toList();
   }
 
-
   Future<void> _showPlantDetails(Plant plant) async {
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -800,10 +800,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Center(
-                child: Text(
-                  plant.emoji,
-                  style: const TextStyle(fontSize: 64),
-                ),
+                child: Text(plant.emoji, style: const TextStyle(fontSize: 64)),
               ),
               const SizedBox(height: 12),
               Center(
@@ -829,22 +826,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
               // Основная информация
               const Text(
                 'Информация о растении',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              _detailRow(
-                Icons.place_outlined,
-                'Место',
-                plant.location,
-              ),
-              _detailRow(
-                Icons.wb_sunny_outlined,
-                'Освещение',
-                plant.light,
-              ),
+              _detailRow(Icons.place_outlined, 'Место', plant.location),
+              _detailRow(Icons.wb_sunny_outlined, 'Освещение', plant.light),
               _detailRow(
                 Icons.water_drop_outlined,
                 'Влажность воздуха',
@@ -853,8 +839,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               _detailRow(
                 Icons.calendar_month_outlined,
                 'Следующий полив',
-                DateFormat('d MMMM yyyy', 'ru_RU')
-                    .format(plant.wateringDate),
+                DateFormat('d MMMM yyyy', 'ru_RU').format(plant.wateringDate),
               ),
               _detailRow(
                 Icons.repeat,
@@ -867,10 +852,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
               // Ботаническая справка
               const Text(
                 'Ботаническая справка',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
               Container(
@@ -885,16 +867,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   children: [
                     const Row(
                       children: [
-                        Icon(
-                          Icons.eco_outlined,
-                          color: Color(0xFF477653),
-                        ),
+                        Icon(Icons.eco_outlined, color: Color(0xFF477653)),
                         SizedBox(width: 8),
                         Text(
                           'Рекомендации по уходу',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -951,10 +928,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
               const Text(
                 'Журнал ухода',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
 
               const SizedBox(height: 12),
@@ -964,11 +938,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
               const SizedBox(height: 16),
               const Text(
                 'Справочные данные демонстрационные. '
-                    'Режим ухода зависит от условий содержания растения.',
-                style: TextStyle(
-                  color: Colors.black54,
-                  fontSize: 12,
-                ),
+                'Режим ухода зависит от условий содержания растения.',
+                style: TextStyle(color: Colors.black54, fontSize: 12),
               ),
             ],
           ),
@@ -987,10 +958,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   List<Widget> _buildCareHistory(Plant plant) {
-    final plantEvents = events
-        .where((event) => event.plantName == plant.name)
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
+    final plantEvents =
+        events.where((event) => event.plantName == plant.name).toList()
+          ..sort((a, b) => b.date.compareTo(a.date));
 
     if (plantEvents.isEmpty) {
       return [
@@ -1043,10 +1013,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 color: const Color(0xFFE0EBDD),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(
-                eventIcon,
-                color: const Color(0xFF477653),
-              ),
+              child: Icon(eventIcon, color: const Color(0xFF477653)),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1062,22 +1029,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    DateFormat(
-                      'd MMMM yyyy',
-                      'ru_RU',
-                    ).format(event.date),
-                    style: const TextStyle(
-                      color: Colors.black54,
-                      fontSize: 13,
-                    ),
+                    DateFormat('d MMMM yyyy', 'ru_RU').format(event.date),
+                    style: const TextStyle(color: Colors.black54, fontSize: 13),
                   ),
-                  if (event.note != null &&
-                      event.note!.trim().isNotEmpty) ...[
+                  if (event.note != null && event.note!.trim().isNotEmpty) ...[
                     const SizedBox(height: 6),
-                    Text(
-                      event.note!,
-                      style: const TextStyle(fontSize: 13),
-                    ),
+                    Text(event.note!, style: const TextStyle(fontSize: 13)),
                   ],
                 ],
               ),
@@ -1087,7 +1044,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
       );
     }).toList();
   }
-
 
   Widget _detailRow(IconData icon, String title, String value) {
     return Padding(
